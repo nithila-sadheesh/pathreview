@@ -104,3 +104,69 @@ against a live in-memory session and returns a row.
 **Self-review confirmation:** [x] make check passes  [x] make test-unit passes
 
 **Draft PR feedback received from:** none
+
+## Week 10 — Iteration & reflection
+
+### Reviewer feedback
+
+**Feedback received:** [ ] Yes  [x] No — still awaiting review
+
+**Summary of feedback:**
+No reviewer feedback came in. Per the Summer 2026 cohort guidance, reviewer
+feedback is not provided this term, so the PR (#154 fix) has not received review
+comments to respond to.
+
+**How you responded:**
+No feedback to respond to. In its place I did a self-review pass — re-read the
+diff against the issue's expected behavior, confirmed the `text("SELECT 1")`
+change was the only code change needed, and verified the reproduction tests in
+`tests/unit/test_health_probe.py` still cover both the failing and fixed paths.
+
+---
+
+### Reflection
+
+**What was harder than you expected?**
+The one-line fix was easy; *proving* it was the hard part. I assumed I could
+write a quick route-level test that hit `GET /health` and asserted a `200`, but
+the health handler depends on the async `get_db` session from `core/database.py`,
+and `aiosqlite` isn't installed, so I couldn't spin up a real async session in a
+test without adding a dependency. Figuring out that the `ArgumentError` actually
+originates in SQLAlchemy's statement coercion — which is identical for sync and
+async engines — and that I could therefore reproduce the exact failure with a
+plain sync SQLite connection took more digging than the fix itself.
+
+**What did you learn about working in a large codebase?**
+Contributing to someone else's production code means most of the work is reading,
+not writing. For issue #154 the actual change was a single line in
+`api/routes/health.py`, but before I trusted it I had to understand how the
+health handler swallowed exceptions in its `except` block, how `get_db` is wired
+up, and whether any other probe (Redis, vector DB) passed raw SQL strings that
+would need the same fix. In my own projects I'd just change the line; here I had
+to respect existing conventions, keep the diff minimal, and make sure I wasn't
+silently masking a real failure path.
+
+**How did AI tools help — and where did they fall short?**
+AI was most useful for orientation and scaffolding — quickly locating the probe
+line, explaining the SQLAlchemy 1.x → 2.x coercion change, and drafting clear
+test docstrings and the PR description. Where it fell short was ground truth: it
+confidently described a fix as "done" and pre-filled `make check`/`make test-unit`
+as passing, but when I actually ran them locally the suite had dozens of
+pre-existing failures unrelated to my change, and the fix line wasn't even in my
+working tree yet. I had to verify state myself rather than trust the summary.
+
+**What would you do differently if you started over?**
+I'd resolve the async-testing question in Week 8 instead of carrying it as an
+open question into Week 9 — either add `aiosqlite` up front or commit to mocking
+`get_db` — so I could have a true route-level test asserting `GET /health`
+returns `200` with `postgres: "healthy"`, not just a probe-level test. I'd also
+run `make test-unit` on the untouched `main` branch early to establish a baseline
+of pre-existing failures, so I wouldn't confuse them with my own later on.
+
+**What are you most proud of from this module?**
+The reproduction test. Rather than just fixing the line, I isolated the root
+cause down to SQLAlchemy's statement coercion and wrote
+`test_raw_string_probe_fails` / `test_text_wrapped_probe_succeeds` to pin both the
+bug and the intended behavior — using a sync SQLite connection to reproduce an
+async-route failure without pulling in an extra dependency. It's a small change,
+but the test makes the *why* legible to the next person who reads it.
