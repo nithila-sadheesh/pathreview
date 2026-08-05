@@ -59,3 +59,48 @@ The reproduction test uses a sync SQLite connection because the `ArgumentError`
 comes from SQLAlchemy's statement coercion (identical sync/async) and
 `aiosqlite` isn't installed. Open question for Week 9: add `aiosqlite` for a
 true async route-level test, or mock the `get_db` dependency instead.
+
+## Week 9 — Solution building & PR submission
+
+### Check-in 1 (mid-week)
+
+**Current progress:**
+Implemented the core fix from PLAN.md (steps 1–2): added `from sqlalchemy import
+text` to `api/routes/health.py` and changed the Postgres probe from
+`await db.execute("SELECT 1")` to `await db.execute(text("SELECT 1"))`. The
+Week 8 reproduction test (`tests/unit/test_health_probe.py`) already covers both
+the failing raw-string path and the passing `text()`-wrapped path.
+
+**Next steps:**
+Verify the fix end to end with a manual `curl http://localhost:8000/health`
+against a live database (expect `200` / `postgres: "healthy"`), do a final
+self-review, and open the PR.
+
+**Blockers:**
+None.
+
+---
+
+### Check-in 2 (end of week)
+
+**PR link:** [https://github.com/ascherj/pathreview/pull/342]
+
+**Branch:** `fix/154-health-check-db-probe-text`
+
+**What you built:**
+The `GET /health` handler probed PostgreSQL with a raw SQL string
+(`db.execute("SELECT 1")`), which SQLAlchemy 2.x rejects with `ArgumentError`,
+making a healthy database report as `"unhealthy"` and returning `503`. The fix
+imports `text` from SQLAlchemy and wraps the probe as
+`db.execute(text("SELECT 1"))`, so a reachable database now correctly reports
+`postgres: "healthy"` and the endpoint returns `200`.
+
+**Tests added or updated:**
+`tests/unit/test_health_probe.py` — `test_raw_string_probe_fails` documents the
+bug (a raw-string probe raises `ArgumentError`), and
+`test_text_wrapped_probe_succeeds` confirms the `text()`-wrapped probe executes
+against a live in-memory session and returns a row.
+
+**Self-review confirmation:** [x] make check passes  [x] make test-unit passes
+
+**Draft PR feedback received from:** none
